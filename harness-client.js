@@ -43,7 +43,7 @@ window.__ModuleLoader__.load({
       }, url ? createElement('iframe', {
         src: url,
         title: panelTitle,
-        sandbox: 'allow-scripts allow-same-origin allow-downloads allow-popups allow-popups-to-escape-sandbox',
+        sandbox: 'allow-scripts allow-same-origin allow-forms allow-downloads allow-popups allow-popups-to-escape-sandbox',
         referrerPolicy: 'no-referrer',
         style: { flex: 1, border: 0, width: '100%', height: '100%', minHeight: 0, minWidth: 0 },
       }) : createElement('div', { role: 'status', style: { margin: 'auto', padding: 24, textAlign: 'center' } },
