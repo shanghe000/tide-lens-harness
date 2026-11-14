@@ -224,6 +224,50 @@ function estimatedInterestValue(points, candles, bar) {
   return result;
 }
 
+function okxLiquidations(rows, symbol, factor) {
+  const records = rows.find(row => row.instId === `${symbol}-USDT-SWAP`)?.details;
+  const occurrences = new Map();
+  return (Array.isArray(records) ? records : []).flatMap(row => {
+    const key = [row.ts, row.bkPx, row.sz, row.side, row.posSide].join(':');
+    const ordinal = occurrences.get(key) ?? 0;
+    occurrences.set(key, ordinal + 1);
+    const normalized = trade(row.ts, row.bkPx, multiply(number(row.sz), factor),
+      ['long','short'].includes(row.posSide) ? row.posSide : row.side === 'sell' ? 'long' : row.side === 'buy' ? 'short' : null,
+      `${key}:${ordinal}`);
+    return normalized ? [{...normalized,raw:{ts:row.ts,bkPx:row.bkPx,sz:row.sz,side:row.side,posSide:row.posSide,contractFactor:factor}}] : [];
+  });
+}
+
+export async function loadReplayTick({venue, symbol}) {
+  if (!venues.has(venue) || typeof symbol !== 'string' || !/^[A-Z0-9]{1,20}$/u.test(symbol)) {
+    throw new RangeError('交易所或币种无效');
+  }
+  const definition = endpointsOf[venue](symbol, 1, 5, '1');
+  const entries = Object.entries(definition).filter(([name]) => ['book','instruments','liquidations'].includes(name));
+  const result = { venue, symbol, book:null, liquidations:[], sources:{}, errors:{} };
+  const payload = {};
+  await Promise.all(entries.map(async ([name, source]) => {
+    result.sources[name] = source;
+    try { payload[name] = await requestVenue(venue, source.url); }
+    catch (error) { result.errors[name] = error.message; }
+  }));
+  const snapshot = payload.book?.data;
+  if (venue === 'okx') {
+    const factor = instrumentFactor(first(payload.instruments?.data ?? []), symbol);
+    const row = first(snapshot ?? []);
+    if (snapshot && factor !== null) result.book = book(row.ts,row.bids,row.asks,factor);
+    if (payload.liquidations && factor !== null) result.liquidations = okxLiquidations(payload.liquidations.data,symbol,factor);
+    if (factor === null) {
+      result.errors.book ??= '缺少 OKX 合约乘数，无法换算挂单数量';
+      result.errors.liquidations ??= '缺少 OKX 合约乘数，无法换算强平数量';
+    }
+  } else if (snapshot) {
+    result.book = venue === 'binance' ? book(snapshot.T ?? snapshot.E,snapshot.bids,snapshot.asks) :
+      book(snapshot.cts ?? snapshot.ts ?? payload.book.time,snapshot.b,snapshot.a);
+  }
+  return result;
+}
+
 function missingSource(url, label, method) {
   return { url, label, method, quality: 'missing' };
 }
@@ -297,11 +341,7 @@ function mapMarket(result, payload, endpoint, boundary, bar) {
     const snapshot = first(rows('book'));
     result.book = book(snapshot.ts, snapshot.bids, snapshot.asks, factor);
     result.trades = rows('trades').map(row => trade(row.ts, row.px, multiply(number(row.sz), factor), row.side, row.tradeId)).filter(Boolean);
-    const records = rows('liquidations').find(row => row.instId === `${symbol}-USDT-SWAP`)?.details;
-    const liquidations = Array.isArray(records) ? records : [];
-    result.liquidations = liquidations.map((row, index) => trade(row.ts, row.bkPx, multiply(number(row.sz), factor),
-      ['long', 'short'].includes(row.posSide) ? row.posSide : row.side === 'sell' ? 'long' : row.side === 'buy' ? 'short' : null,
-      `${row.ts}:${row.bkPx}:${row.sz}:${row.side}:${index}`)).filter(Boolean);
+    result.liquidations = okxLiquidations(rows('liquidations'), symbol, factor);
     mark('liquidations', 'liquidations');
     if (factor === null) {
       const message = '合约规格不足以将订单张数换算成标的币数量';

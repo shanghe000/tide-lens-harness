@@ -19,10 +19,16 @@ function fingerprint(record) {
 function normalizedSource(source) {
   if (typeof source === 'string') return { url: source };
   const clean = {};
-  for (const key of ['url', 'label', 'method', 'quality']) {
+  for (const key of ['url', 'label', 'method', 'quality', 'documentation']) {
     if (typeof source?.[key] === 'string') clean[key] = source[key];
   }
   return Object.keys(clean).length ? clean : null;
+}
+
+export function makeFact({key,venue,symbol,asOf,label,unit,value,quality,source,context=null}) {
+  if (!Number.isFinite(value) || !Number.isFinite(asOf) || !['measured','estimated'].includes(quality)) return null;
+  const record = { key, venue, symbol, asOf, label, unit, value, quality, source:normalizedSource(source), context };
+  return {id:fingerprint(record),...record};
 }
 
 export function factForMarket(market, key) {
@@ -39,7 +45,6 @@ export function factForMarket(market, key) {
     definition = definitions[key];
     value = market.metrics?.[key];
     source = market.sources?.[key];
-    timestamp = market.metricsTimes?.[key] ?? timestamp;
     timestamp = market.metricsTimes?.[key] ?? market.asOf;
   } else if (category === 'candle') {
     const candle = market.candles?.find(item => item.ts === Number(detail));
@@ -85,17 +90,14 @@ export function factForMarket(market, key) {
     value = record?.notional;
     timestamp = record?.ts;
     source = market.sources?.[field];
-    if (record) context = { side: record.side, price: record.price, size: record.size };
+    if (record) context = { side: record.side, price: record.price, size: record.size, ...(record.raw && {raw:record.raw}) };
   }
 
   if (!definition || !Number.isFinite(value) || !Number.isFinite(timestamp)) return null;
   if (!quality) quality = source?.quality === 'estimated' ? 'estimated' : 'measured';
   if (source?.quality === 'missing') return null;
-  const record = {
-    key, venue: market.venue, symbol: market.symbol, asOf: timestamp,
-    ...definition, value, quality, source: normalizedSource(source), context,
-  };
-  return { id: fingerprint(record), ...record };
+  return makeFact({key, venue:market.venue, symbol:market.symbol, asOf:timestamp,
+    ...definition,value,quality,source,context});
 }
 
 function verifyFact(fact) {

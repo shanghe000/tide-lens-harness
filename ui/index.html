@@ -10,7 +10,8 @@
 <nav id="tabs" aria-label="研究功能">
   <button data-tab="market" aria-current="page">行情工作台</button>
   <button data-tab="scan">异动与排名</button>
-  <button data-tab="whale">地址观察</button>
+  <button data-tab="whale">巨鲸持仓历史</button>
+  <button data-tab="replay">盘口与强平回放</button>
   <button data-tab="calc">合约计算器</button>
   <button data-tab="review">核对记录</button>
 </nav>
@@ -28,6 +29,16 @@
   <div class="layout">
     <div>
       <div class="panel primary"><div class="panel-head"><div><h1 id="pair">BTC / USDT</h1><p id="chart-time">当前区间</p></div><button id="price-source" class="source-link">K线来源</button></div>
+        <div id="drawing-tools" class="tool-row" aria-label="图表绘图">
+          <button type="button" data-draw="cursor" aria-pressed="true">光标</button>
+          <button type="button" data-draw="horizontal" aria-pressed="false">水平线</button>
+          <button type="button" data-draw="trend" aria-pressed="false">趋势线</button>
+          <button type="button" data-draw="measure" aria-pressed="false">测距</button>
+          <button type="button" id="drawing-undo" disabled>撤销</button>
+          <button type="button" id="drawing-clear" disabled>清空</button>
+          <button type="button" id="drawing-source" class="source-link">绘图口径</button>
+        </div>
+        <div id="drawing-status" class="chart-info"></div>
         <div class="chart-shell"><canvas id="price-chart" tabindex="0" aria-label="价格 K 线，左右方向键移动时间"></canvas></div><input type="range" id="time" aria-label="同步时间轴" min="0" max="0" value="0">
         <div id="hover-info" class="chart-info"></div>
       </div>
@@ -50,10 +61,35 @@
   <div class="panel"><div class="panel-head"><h2>本地异动提醒</h2></div><form id="alert-form" class="controls"><label>币种<input id="alert-symbol" value="BTC" maxlength="12" required></label><label>24h 涨跌绝对值超出 %<input id="alert-change" type="number" min="0.1" max="100" step="0.1" value="5" required></label><button class="action">保存规则</button></form><div id="alerts"></div></div>
 </section>
 <section id="whale" hidden>
-  <div class="section-title"><h1>地址观察</h1></div>
-  <p>查看你指定的 Hyperliquid 公开地址的合约持仓。地址不会被保存。</p>
-  <form id="whale-form" class="controls"><label class="wide">公开钱包地址<input id="whale-address" placeholder="0x…" pattern="0x[0-9a-fA-F]{40}" required></label><button class="action">查询公开持仓</button></form>
+  <div class="section-title"><h1>巨鲸持仓历史</h1></div>
+  <p>输入 Hyperliquid 公开地址，查看逐笔成交和可重建的仓位变化。</p>
+  <form id="whale-form" class="controls"><label class="wide">公开钱包地址<input id="whale-address" placeholder="0x…" pattern="0x[0-9a-fA-F]{40}" required></label><label>历史区间<select id="whale-hours"><option value="24">24 小时</option><option value="72">3 天</option><option value="168">7 天</option></select></label><button class="action">查询持仓历史</button></form>
   <div class="panel"><div class="panel-head"><h2>账户快照</h2></div><div id="whale-results" role="status">输入公开地址后查看。</div></div>
+  <div class="panel"><div class="panel-head"><div><h2>净仓位变化</h2><p id="whale-coverage">显示数据覆盖和断点。</p></div><button id="whale-source" class="source-link" disabled>来源与重建方法</button></div>
+    <div class="controls"><label>币种<select id="whale-symbol" disabled><option>选择币种</option></select></label></div>
+    <div class="chart-shell short"><canvas id="whale-chart" aria-label="带符号净持仓历史"></canvas></div>
+    <div id="whale-events"></div>
+  </div>
+  <div class="panel"><div class="panel-head"><h2>资金费流水</h2><button id="whale-funding-source" class="source-link" disabled>资金费来源</button></div><div id="whale-funding"></div></div>
+</section>
+<section id="replay" hidden>
+  <div class="section-title"><h1>盘口与强平回放</h1></div>
+  <p>录制从你启动时开始。每帧显示已保留的盘口快照和交易所公开强平事件。</p>
+  <div class="panel">
+    <div class="panel-head"><div><h2>本机录制</h2><p>停止录制后，可回放或导出记录。</p></div></div>
+    <form id="replay-form" class="controls"><label>交易所<select id="replay-venue"><option value="okx">OKX</option><option value="binance">Binance</option><option value="bybit">Bybit</option></select></label><label>币种<input id="replay-symbol" value="BTC" maxlength="12" pattern="[A-Za-z0-9]{1,12}" required></label><button class="action" id="replay-start" type="submit">开始录制</button><button type="button" id="replay-stop" disabled>停止录制</button></form>
+    <div class="controls"><label>回放记录<select id="replay-sessions" aria-label="回放记录"></select></label><button type="button" id="replay-export" disabled>导出 NDJSON</button><label>导入本机记录<input id="replay-import" type="file" accept=".ndjson,.jsonl,application/x-ndjson"></label></div>
+    <p id="replay-status" role="status">还没有选择记录。</p>
+  </div>
+  <div class="panel">
+    <div class="panel-head"><div><h2>回放时间轴</h2><p id="replay-time">选择记录后可拖动或播放。</p></div><button type="button" id="replay-source" class="source-link" disabled>采集与口径</button></div>
+    <div class="tool-row"><button type="button" id="replay-prev" disabled>上一帧</button><button type="button" id="replay-play" disabled>播放</button><button type="button" id="replay-next" disabled>下一帧</button></div>
+    <input type="range" id="replay-cursor" aria-label="回放时间轴" min="0" max="0" value="0" disabled>
+  </div>
+  <div class="layout">
+    <div class="panel"><div class="panel-head"><h2>回放盘口</h2><button type="button" id="replay-book-source" class="source-link" disabled>盘口来源</button></div><div id="replay-book"></div></div>
+    <div class="panel"><div class="panel-head"><h2>公开强平</h2><button type="button" id="replay-liquidation-source" class="source-link" disabled>强平来源</button></div><div id="replay-liquidations"></div></div>
+  </div>
 </section>
 <section id="calc" hidden>
   <div class="section-title"><h1>合约计算器</h1></div>

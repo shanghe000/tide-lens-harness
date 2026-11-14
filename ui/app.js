@@ -1,11 +1,12 @@
 import { evaluateAlerts } from './advanced.mjs';
+import { createDrawingController } from './drawings.js';
 
 const $ = id => document.getElementById(id);
 const state = {
   market: null, screener: null, window: '24h', series: 'oiUsd', cursor: 0, venue: 'okx',
   request: 0, scanRequest: 0, reviews: new Map(),
 };
-const venueName = {okx:'OKX',binance:'Binance',bybit:'Bybit'};
+const venueName = {okx:'OKX',binance:'Binance',bybit:'Bybit',hyperliquid:'Hyperliquid'};
 const metric = {
   price: ['最新价', ' USDT'], change: ['24h 涨跌', '%'], oi: ['未平仓量', ''], oiUsd: ['持仓名义价值',' USD'],
   funding: ['资金费率','%'], longRatio: ['账户多空比',' 倍'], book: ['盘口快照',''],
@@ -17,6 +18,7 @@ const compact = new Intl.NumberFormat('zh-CN', {notation:'compact',maximumFracti
 const clock = new Intl.DateTimeFormat('zh-CN', {timeZone:'Asia/Shanghai', month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
 const num = (value, short = false) => Number.isFinite(value) ? (short ? compact : cn).format(value) : '—';
 const when = ts => Number.isFinite(ts) ? clock.format(ts) : '—';
+const isoTime = value => typeof value === 'number' ? value : Date.parse(value);
 const fmt = (key, value, short = false) => Number.isFinite(value) ?
   num(key === 'funding' ? value * 100 : value,short) + (metric[key]?.[1] || '') : '—';
 const changeClass = v => v > 0 ? 'positive' : v < 0 ? 'negative' : '';
@@ -34,7 +36,7 @@ function button(label, onClick, className) {
 }
 function badge(key) { return el('span',quality[key] || quality.missing,'tag ' + key); }
 function empty(node, text, error = false) { node.replaceChildren(el('p',text,error ? 'error' : 'empty')); }
-const prefs = {watchlist: [], rules: [], events: []};
+const prefs = {watchlist: [], rules: [], events: [], drawings:{}};
 const prefKey = {'tide-watchlist':'watchlist','tide-rules':'rules','tide-alert-history':'events'};
 const loadPrefs = api('preferences').then(value=>Object.assign(prefs,value)).catch(()=>{});
 function stored(key, fallback) { return prefs[prefKey[key]] ?? fallback; }
@@ -89,6 +91,8 @@ function sourceBody(source, error, raw) {
   if (source?.method) box.append(el('p',source.method));
   const a = link(source?.url,'打开原始接口');
   if (a) box.append(a);
+  const documentation=link(source?.documentation,'查看接口文档');
+  if(documentation) box.append(' · ',documentation);
   if (error) box.append(el('p',error,'empty'));
   if (raw !== undefined) {
     const details = el('details');
@@ -175,7 +179,7 @@ function drawBase(element, low, high, times, noData, domain = times) {
     g.textAlign=i===0?'left':i===3?'right':'center';
     g.fillText(when(min+(max-min)*i/3),px,dh-7);
   }
-  return {g,x,y,top,bottom,left,right};
+  return {g,x,y,top,bottom,left,right,min,max,low,high:low+delta};
 }
 function vertical(base, ts) {
   if (!base || !Number.isFinite(ts)) return;
@@ -183,6 +187,45 @@ function vertical(base, ts) {
   g.strokeStyle = '#85e9db';
   g.setLineDash([4,4]);g.beginPath();g.moveTo(x(ts),top);g.lineTo(x(ts),bottom);g.stroke();g.setLineDash([]);
 }
+let drawingFrame;
+const drawingHint = {
+  horizontal:'在图表上选一个价格，或用方向键定位后按 Enter。',
+  trend:'选两个时间与价格锚点，或用方向键和 Enter。',
+  measure:'选两个锚点计算价差、涨跌幅和时间差。',
+};
+const drawings=createDrawingController({
+  load:key=>prefs.drawings?.[key] ?? [],
+  save(key,items){
+    prefs.drawings[key]=items;
+    return api('preferences',{drawing:{key,items}});
+  },
+  change(data){
+    $('drawing-tools').querySelectorAll('[data-draw]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.draw===data.tool));
+    $('drawing-undo').disabled=!data.items.length;
+    $('drawing-clear').disabled=!data.items.length;
+    $('price-chart').dataset.drawing=data.tool!=='cursor';
+    $('price-chart').setAttribute('aria-label',data.tool==='cursor'?'价格 K 线，左右方向键移动时间':
+      '绘图。方向键移动，Enter 固定锚点，Escape 取消');
+    const m=data.measurement;
+    const measurement=m?'价差 '+num(m.priceChange)+' USDT · '+num(m.percentChange)+'% · '+num(m.elapsedMs/60_000)+' 分钟':'';
+    $('drawing-status').textContent=data.storageError || (data.tool==='cursor' ? '' :
+      (data.tool==='measure'&&measurement ? measurement : data.anchor?'请选择第二个锚点。':drawingHint[data.tool]));
+    cancelAnimationFrame(drawingFrame);
+    drawingFrame=requestAnimationFrame(drawCharts);
+  },
+});
+$('drawing-tools').addEventListener('click',event=>{
+  const b=event.target.closest('[data-draw]');
+  if(b){drawings.setTool(b.dataset.draw);$('price-chart').focus({preventScroll:true});}
+});
+$('drawing-undo').onclick=()=>drawings.undo();
+$('drawing-clear').onclick=()=>drawings.clear();
+$('drawing-source').onclick=()=>{
+  const {items,measurement}=drawings.snapshot();
+  showEvidence('图表标注与测距',{label:'本机绘图',quality:'estimated',
+    method:'锚点取图表坐标对应的 UTC 时间与 USDT 价格。价差 = 终点 − 起点，涨跌幅 = 价差 ÷ 起点 × 100%，时长 = 两点时间差的绝对值。标注按交易所和币种保存在本机。'},
+    null,{markCount:items.length,lastDrawing:items.at(-1),measurement},null,'estimated');
+};
 function currentCandle() { return state.market?.candles[state.cursor]; }
 function drawCharts() {
   const m = state.market;
@@ -190,6 +233,7 @@ function drawCharts() {
   const candles = m.candles;
   const times = candles.map(p=>p.ts), point = currentCandle();
   const price = drawBase($('price-chart'),Math.min(...candles.map(c=>c.low)),Math.max(...candles.map(c=>c.high)),times,'K 线暂缺');
+  drawings.setBase(price ?? null);
   if (price) {
     const {g,x,y,left,right} = price;
     const width = Math.max(1, Math.min(11, (right-left)/Math.max(candles.length,1)*.72));
@@ -199,6 +243,7 @@ function drawCharts() {
       g.fillRect(x(c.ts)-width/2,Math.min(y(c.open),y(c.close)),width,Math.max(1,Math.abs(y(c.open)-y(c.close))));
     });
     vertical(price,point?.ts);
+    drawings.render();
   }
   const model = m.model, heatTimes = [...new Set(model.cells.map(c=>c.ts))].sort((a,b)=>a-b);
   const heat = drawBase($('heat-chart'),model.priceRange?.[0],model.priceRange?.[1],heatTimes,'当前区间无足够持仓增量',times.length?times:heatTimes);
@@ -293,9 +338,12 @@ async function loadMarket() {
   try {
     const m=await api('market?' + q);
     if (request!==state.request) return;
+    await loadPrefs;
+    if(request!==state.request)return;
     state.market=m;state.venue=venue;state.cursor=m.candles.length-1;
+    drawings.setMarket(m.venue,m.symbol);
     const available=Object.values(m.metrics).some(Number.isFinite) || m.candles.length>0;
-    $('live-status').textContent=available?venueName[venue]+' · '+when(m.asOf)+' UTC+8':'行情源暂不可用';
+    $('live-status').textContent=m.demo?'演示数据 · '+when(m.asOf)+' UTC+8':available?venueName[venue]+' · '+when(m.asOf)+' UTC+8':'行情源暂不可用';
     if (available) $('market-message').replaceChildren();
     else empty($('market-message'),'当前行情接口不可达。检查网络后重试，缺失值已保留。',true);
     renderMarket();
@@ -368,6 +416,9 @@ function activate(tab) {
   if(tab==='market')drawCharts();
   if(tab==='scan')void loadScanner();
   if(tab==='review')void loadReviews();
+  if(tab==='replay')void replayList();
+  if(tab!=='replay')pauseReplay();
+  if(tab==='whale')drawWhale();
 }
 $('tabs').addEventListener('click',e=>{ const b=e.target.closest('[data-tab]'); if(b)activate(b.dataset.tab); });
 $('market-form').addEventListener('submit',e=>{e.preventDefault();void loadMarket();});
@@ -382,6 +433,7 @@ $('time').addEventListener('input',e=>updateCursor(Number(e.target.value)));
 for(const id of ['price-chart','heat-chart','series-chart']){
   const chart=$(id);
   chart.addEventListener('pointermove',event=>{
+    if(id==='price-chart'&&drawings.pointer(event))return;
     const candles=state.market?.candles||[];
     if(!candles.length)return;
     const rect=chart.getBoundingClientRect();
@@ -390,10 +442,13 @@ for(const id of ['price-chart','heat-chart','series-chart']){
     if(cursor!==state.cursor)updateCursor(cursor);
   });
   chart.addEventListener('keydown',event=>{
+    if(id==='price-chart'&&drawings.key(event))return;
     if(!['ArrowLeft','ArrowRight'].includes(event.key))return;
     event.preventDefault();updateCursor(state.cursor+(event.key==='ArrowLeft'?-1:1));
   });
 }
+$('price-chart').addEventListener('click',event=>drawings.click(event));
+$('price-chart').addEventListener('pointerleave',()=>drawings.leave());
 $('price-source').onclick=()=>{
   const c=currentCandle();
   if(c)void openFact('candle:'+c.ts,'K 线收盘价','candles',c);
@@ -427,21 +482,250 @@ $('alert-form').addEventListener('submit',event=>{
   const rules=stored('tide-rules',[]);
   rules.push({id:crypto.randomUUID(),symbol,metric:'changePct',operator:'gte',threshold});store('tide-rules',rules);renderAlerts();
 });
+let whaleHistory = null;
+const whaleAction={open:'开仓',add:'加仓',reduce:'减仓',close:'平仓',flip:'反手'};
+function drawWhale() {
+  if ($('whale').hidden) return;
+  const position=whaleHistory?.positions.find(x=>x.symbol===$('whale-symbol').value);
+  const points=(position?.points ?? []).map(x=>({...x,ts:isoTime(x.timestamp)})).filter(x=>Number.isFinite(x.ts));
+  const values=points.map(x=>x.signedQuantity).filter(Number.isFinite);
+  const chart=drawBase($('whale-chart'),Math.min(0,...values),Math.max(0,...values),values.length?points.map(x=>x.ts):[],
+    '没有可绘制的净仓位点');
+  if (!chart) return;
+  const {g,x,y,left,right}=chart;
+  g.strokeStyle='#48606e';g.beginPath();g.moveTo(left,y(0));g.lineTo(right,y(0));g.stroke();
+  g.strokeStyle='#64e7cd';g.fillStyle='#64e7cd';g.lineWidth=1.5;
+  let previous=null;
+  for(const p of points) {
+    if(!Number.isFinite(p.signedQuantity)){previous=null;continue;}
+    if(previous){
+      g.setLineDash([4,3]);g.beginPath();g.moveTo(x(previous.ts),y(previous.signedQuantity));g.lineTo(x(p.ts),y(previous.signedQuantity));g.stroke();
+      g.setLineDash([]);g.beginPath();g.moveTo(x(p.ts),y(previous.signedQuantity));g.lineTo(x(p.ts),y(p.signedQuantity));g.stroke();
+    }
+    g.beginPath();g.arc(x(p.ts),y(p.signedQuantity),2.3,0,Math.PI*2);g.fill();
+    previous=p;
+  }
+}
+function whaleHistorySource(part='main') {
+  if(!whaleHistory)return;
+  const h=whaleHistory, section=part==='funding'?h.funding:h;
+  if(!section)return;
+  showEvidence(part==='funding'?'账户资金费来源':'公开地址仓位重建',
+    {...(section.source ?? h.source),...(part==='funding'&&{documentation:h.source.fundingDocumentation}),
+      quality:section.coverage?.status==='missing'?'missing':part==='funding'?'measured':'estimated'},
+    section.coverage?.reason,{coverage:section.coverage,from:h.start,to:h.end},null);
+}
+function renderWhaleHistory() {
+  const h=whaleHistory;
+  drawWhale();
+  if(!h)return;
+  const rows=h.events.filter(x=>x.symbol===$('whale-symbol').value);
+  table($('whale-events'),['时间 UTC+8','动作','成交价','成交前仓位','成交后仓位'],rows.slice(-150).reverse().map(item=>[
+    when(isoTime(item.timestamp)),whaleAction[item.action]||item.action,num(item.price),num(item.signedBefore),
+    button(num(item.signedAfter),()=>showEvidence('成交后重建净仓位',{...h.source,quality:'estimated'},null,item.raw ?? item,item.fact,'estimated'),'source-link'),
+  ]), '所选币种在本区间没有可用的公开逐笔成交。');
+  const funding=(h.funding?.events ?? []).filter(x=>!$('whale-symbol').value||x.symbol===$('whale-symbol').value);
+  table($('whale-funding'),['结算时间 UTC+8','币种','资金费 USDC','费率'],funding.slice(-100).reverse().map(item=>[
+    when(isoTime(item.timestamp)),item.symbol,
+    button(num(item.amount),()=>showEvidence('公开资金费流水',{...(h.funding.source ?? h.source),documentation:h.source.fundingDocumentation},null,item.raw ?? item,item.fact,'measured'),'source-link'),
+    Number.isFinite(item.ratePct)?num(item.ratePct)+'%':'—',
+  ]),h.funding?.coverage?.reason || '选中币种暂无可用资金费记录。');
+}
+$('whale-source').onclick=()=>whaleHistorySource();
+$('whale-funding-source').onclick=()=>whaleHistorySource('funding');
+$('whale-symbol').onchange=renderWhaleHistory;
 $('whale-form').addEventListener('submit',async event=>{
   event.preventDefault();
   const parent=$('whale-results'),btn=event.submitter;
   btn.disabled=true;empty(parent,'正在读取 Hyperliquid 公开持仓…');
+  whaleHistory=null;
+  $('whale-symbol').disabled=$('whale-source').disabled=$('whale-funding-source').disabled=true;
+  $('whale-symbol').replaceChildren(new Option('选择币种',''));
+  $('whale-coverage').textContent='正在读取公开历史…';
+  $('whale-events').replaceChildren();$('whale-funding').replaceChildren();drawWhale();
   try{
-    const result=await api('whale?'+new URLSearchParams({address:$('whale-address').value.trim()}));
-    const summary=el('p','账户价值 '+num(result.summary.accountValue,true)+' USD · 名义持仓 '+num(result.summary.totalNotional,true)+' USD · '+when(result.timestamp)+' UTC+8');
-    const details=el('div');
-    table(details,['币种','方向','数量','平均入场','强平价','未实现盈亏'],result.positions.map(r=>[
-      r.symbol,r.side==='long'?'多':'空',num(r.quantity),num(r.entryPrice),num(r.liquidationPrice),num(r.unrealizedPnl),
-    ]),'此地址没有公开的永续仓位。');
-    parent.replaceChildren(summary,details,button('账户来源',()=>showEvidence('Hyperliquid 公开地址',result.source,null,result,null,'measured'),'source-link'));
-  }catch(e){empty(parent,e.message,true);}
+    const {current,history,currentError,historyError}=await api('whale/history',{
+      address:$('whale-address').value.trim(),hours:Number($('whale-hours').value),
+    });
+    if(current){
+      const summary=el('p','账户价值 '+num(current.summary.accountValue,true)+' USD · 名义持仓 '+num(current.summary.totalNotional,true)+' USD · '+when(isoTime(current.timestamp))+' UTC+8');
+      const details=el('div');
+      table(details,['币种','方向','数量','平均入场','强平价','未实现盈亏'],current.positions.map(r=>[
+        button(r.symbol,()=>showEvidence('Hyperliquid 公开仓位',current.source,null,r,null,'measured'),'source-link'),
+        r.side==='long'?'多':'空',num(r.quantity),num(r.entryPrice),num(r.liquidationPrice),num(r.unrealizedPnl),
+      ]),'此地址没有公开的永续仓位。');
+      parent.replaceChildren(summary,details,button('账户来源',()=>showEvidence('Hyperliquid 公开地址',current.source,null,current,null,'measured'),'source-link'));
+    }else empty(parent,currentError || '当前持仓暂时不可用。',true);
+    if(history){
+      whaleHistory=history;
+      $('whale-coverage').textContent=[history.coverage?.status==='partial'?'部分覆盖':history.coverage?.status==='missing'?'缺失':'可见区间',
+        when(isoTime(history.start))+'–'+when(isoTime(history.end))+' UTC+8',history.coverage?.reason].filter(Boolean).join(' · ');
+      const symbols=[...new Set([...history.positions.map(p=>p.symbol),...(history.funding?.events??[]).map(f=>f.symbol)])];
+      $('whale-symbol').replaceChildren(...(symbols.length?symbols.map(symbol=>new Option(symbol,symbol)):[new Option('无可用币种','')]));
+      $('whale-symbol').disabled=!symbols.length;
+      $('whale-source').disabled=false;
+      $('whale-funding-source').disabled=!history.funding;
+      renderWhaleHistory();
+    }else $('whale-coverage').textContent=historyError || '持仓历史暂时不可用。';
+  }catch(e){empty(parent,e.message,true);$('whale-coverage').textContent='持仓历史暂时不可用。';}
   finally{btn.disabled=false;}
 });
+const playback={id:null,index:0,timeline:[],details:null,request:0,listRequest:0,timer:null,playing:false,activeId:null};
+function replaySessionTitle(s) {
+  const labels={recording:'录制中',stopped:'已停止',interrupted:'已中断',limit:'达到上限',error:'采集中断'};
+  return venueName[s.venue]+' '+s.symbol+' · '+when(s.startedAt)+' · '+(s.origin==='imported'?'导入':labels[s.state]||s.state);
+}
+function replayButtons() {
+  const has=playback.timeline.length>0;
+  $('replay-cursor').disabled=!has;
+  $('replay-cursor').max=Math.max(0,playback.timeline.length-1);
+  $('replay-cursor').value=playback.index;
+  $('replay-prev').disabled=!has||playback.index===0;
+  $('replay-next').disabled=!has||playback.index>=playback.timeline.length-1;
+  $('replay-play').disabled=playback.timeline.length<2;
+  $('replay-play').textContent=playback.playing?'暂停':'播放';
+}
+function pauseReplay() {
+  playback.playing=false;clearTimeout(playback.timer);replayButtons();
+}
+function chooseReplay(id) {
+  if (!id || id===playback.id) return;
+  pauseReplay();
+  playback.request++;
+  playback.id=id;playback.index=0;playback.timeline=[];playback.details=null;
+  replayButtons();
+  empty($('replay-book'),'正在读取所选记录…');$('replay-liquidations').replaceChildren();
+  void loadReplay(null,true);
+}
+async function replayList(preferred) {
+  const request=++playback.listRequest;
+  try {
+    const {sessions}=await api('replay/list');
+    if(request!==playback.listRequest)return;
+    playback.activeId=sessions.find(s=>s.state==='recording')?.id ?? null;
+    $('replay-start').disabled=Boolean(playback.activeId);
+    $('replay-stop').disabled=!playback.activeId;
+    const select=$('replay-sessions');
+    select.replaceChildren(...(sessions.length?sessions.map(s=>new Option(replaySessionTitle(s),s.id)):[new Option('暂无记录','')]));
+    select.disabled=!sessions.length;
+    const id=[preferred,playback.id,playback.activeId,sessions[0]?.id].find(v=>sessions.some(s=>s.id===v));
+    if(id){select.value=id;chooseReplay(id);}
+  }catch(e){$('replay-status').textContent=e.message;}
+}
+function replayEvidence(kind,item,key) {
+  const d=playback.details;
+  if(!d)return;
+  const imported=d.session.origin==='imported';
+  const source=kind==='book'?d.frame?.sources?.book:kind==='liquidations'?d.liquidationSource:null;
+  const book=kind==='book';
+  const title=book?'回放盘口快照':kind==='liquidations'?'交易所公开强平':'采集范围与时间对齐';
+  const meta={recordedAt:d.frame?.ts,bookTimestamp:d.frame?.book?.ts,requestedAt:d.requestedAt,
+    gaps:d.frame?.gaps,streamStatus:d.frame?.streamStatus,stale:d.stale,origin:d.session.origin};
+  const gap=imported?'本机导入数据，来源由文件声明，尚未独立核实。':
+    (book&&d.stale?'离选择的时刻较远，请核对快照时间。':undefined);
+  const method=source?.method || '回放按实际记录时间对齐，显示选中时间之前最近的盘口快照。强平按交易所事件时间展示。录制期间可能有轮询、推送或网络缺口。';
+  const defined={...source,label:source?.label||title,method,quality:imported?'missing':source?.quality || (kind==='all'?'estimated':'missing')};
+  showEvidence(title,defined,gap,item?{row:item,...meta}:meta,imported?null:d.audit?.[key],defined.quality);
+}
+for(const [id,kind] of [['replay-source','all'],['replay-book-source','book'],['replay-liquidation-source','liquidations']]){
+  $(id).onclick=()=>replayEvidence(kind);
+}
+function renderReplay(d) {
+  const f=d.frame;
+  const coverage=(f?.gaps??[]).join(' · ');
+  $('replay-status').textContent=[replaySessionTitle(d.session),d.session.frames+' 个盘口采样时点',
+    d.session.origin==='imported'?'导入记录，来源待核实':null,coverage].filter(Boolean).join(' ｜ ');
+  $('replay-time').textContent=[when(d.requestedAt)+' UTC+8',f?.book?.ts?'盘口快照 '+when(f.book.ts):'当前没有盘口快照',
+    d.stale?'盘口快照距当前帧较远':null].filter(Boolean).join(' · ');
+  $('replay-export').disabled=d.session.state==='recording';
+  $('replay-source').disabled=$('replay-book-source').disabled=$('replay-liquidation-source').disabled=false;
+  const rows=(side)=>(f?.book?.[side]??[]).slice(0,12).map(row=>[
+    el('span',side==='bids'?'买':'卖',side==='bids'?'positive':'negative'),num(row.price),num(row.size),
+    button(num(row.notional,true),()=>replayEvidence('book',row,'book:'+(side==='bids'?'bid':'ask')+':'+row.price),'source-link'),
+  ]);
+  table($('replay-book'),['方向','价格','数量','名义价值 USDT'],[...rows('asks').reverse(),...rows('bids')],'所选时刻没有可用盘口快照。');
+  table($('replay-liquidations'),['时间 UTC+8','被强平一侧','参考价','名义价值 USDT'],d.liquidations.slice(0,60).map(row=>[
+    when(row.ts),row.side==='long'?'多头':'空头',num(row.price),
+    button(num(row.notional,true),()=>replayEvidence('liquidations',row,'liquidation:'+row.id),'source-link'),
+  ]), '当前时间片未收到公开强平样本。');
+  replayButtons();
+}
+async function loadReplay(ts,latest=false) {
+  const request=++playback.request, id=playback.id;
+  if(!id)return false;
+  try{
+    const q=new URLSearchParams({id});
+    if(Number.isFinite(ts))q.set('ts',ts);
+    const d=await api('replay/frame?'+q);
+    if(request!==playback.request||id!==playback.id)return false;
+    playback.details=d;playback.timeline=d.timeline;
+    playback.index=latest ? Math.max(0,d.timeline.length-1) : Math.max(0,d.timeline.findLastIndex(x=>x.ts<=d.requestedAt));
+    renderReplay(d);
+    return true;
+  }catch(e){if(request===playback.request)$('replay-status').textContent=e.message;return false;}
+}
+function selectReplayFrame(index) {
+  const position=Math.max(0,Math.min(playback.timeline.length-1,index));
+  const time=playback.timeline[position]?.ts;
+  if(!Number.isFinite(time))return Promise.resolve(false);
+  return loadReplay(time);
+}
+async function advanceReplay() {
+  if(!playback.playing)return;
+  if(!await selectReplayFrame(playback.index+1)||playback.index>=playback.timeline.length-1){pauseReplay();return;}
+  if(playback.playing)playback.timer=setTimeout(advanceReplay,700);
+}
+$('replay-sessions').onchange=event=>chooseReplay(event.target.value);
+$('replay-cursor').oninput=event=>{pauseReplay();void selectReplayFrame(Number(event.target.value));};
+$('replay-prev').onclick=()=>{pauseReplay();void selectReplayFrame(playback.index-1);};
+$('replay-next').onclick=()=>{pauseReplay();void selectReplayFrame(playback.index+1);};
+$('replay-play').onclick=async()=>{
+  if(playback.playing){pauseReplay();return;}
+  playback.playing=true;replayButtons();
+  if(playback.index>=playback.timeline.length-1&&!await selectReplayFrame(0)){pauseReplay();return;}
+  if(playback.playing)playback.timer=setTimeout(advanceReplay,700);
+};
+$('replay-form').onsubmit=async event=>{
+  event.preventDefault();$('replay-start').disabled=true;
+  $('replay-status').textContent='正在启动本机录制…';
+  try{
+    const {session}=await api('replay/start',{venue:$('replay-venue').value,symbol:$('replay-symbol').value.trim().toUpperCase()});
+    await replayList(session.id);
+  }catch(e){$('replay-status').textContent=e.message;$('replay-start').disabled=Boolean(playback.activeId);}
+};
+$('replay-stop').onclick=async()=>{
+  if(!playback.activeId)return;
+  const id=playback.activeId;
+  $('replay-stop').disabled=true;
+  try{await api('replay/stop',{id});await replayList(id);await loadReplay(null,true);}
+  catch(e){$('replay-status').textContent=e.message;$('replay-stop').disabled=false;}
+};
+$('replay-import').onchange=async event=>{
+  const [file]=event.target.files;
+  if(!file)return;
+  try{
+    if(file.size>16*1024*1024)throw new Error('复盘文件超过 16 MB。');
+    const {session}=await api('replay/import',{text:await file.text()});
+    await replayList(session.id);
+  }catch(e){$('replay-status').textContent=e.message;}
+  finally{event.target.value='';}
+};
+$('replay-export').onclick=async()=>{
+  if(!playback.id||!playback.details)return;
+  try{
+    const {text}=await api('replay/export?'+new URLSearchParams({id:playback.id}));
+    const url=URL.createObjectURL(new Blob([text],{type:'application/x-ndjson'}));
+    const a=el('a');a.href=url;a.download='tide-lens-'+playback.details.session.venue+'-'+playback.details.session.symbol+'.ndjson';
+    document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }catch(e){$('replay-status').textContent=e.message;}
+};
+setInterval(()=>{
+  if(!$('replay').hidden&&playback.activeId&&playback.id===playback.activeId&&!playback.playing){
+    const latest=playback.index>=playback.timeline.length-1;
+    const time=playback.timeline[playback.index]?.ts;
+    void loadReplay(latest?null:time,latest);
+  }
+},5000);
 const calcLabels={quantity:'币数量',notional:'仓位名义价值',initialMargin:'初始保证金',liquidationPrice:'估算强平价',pnl:'毛盈亏',fees:'手续费',netPnl:'净盈亏',roePct:'保证金收益率 %',fundingPayment:'资金费现金流',riskQuantity:'风险仓位数量',riskNotional:'风险仓位名义价值',riskMargin:'所需保证金',rewardRisk:'盈亏比'};
 async function runCalc() {
   const input=Object.fromEntries([...new FormData($('calc-form'))].filter(([,v])=>v!=='').map(([k,v])=>[k,k==='side'?v:Number(v)]));
@@ -481,8 +765,9 @@ $('analysis').onclick=async()=>{
     $('analysis-results').replaceChildren(detail);
   }catch(e){empty($('analysis-results'),e.message,true);}
 };
-const resize = new ResizeObserver(drawCharts);
+const resize = new ResizeObserver(()=>{drawCharts();drawWhale();});
 resize.observe($('price-chart').parentElement);
+resize.observe($('whale-chart').parentElement);
 setInterval(()=>{if(!$('scan').hidden&&!document.hidden)void loadScanner();},60_000);
 void loadMarket();
 void runCalc();
