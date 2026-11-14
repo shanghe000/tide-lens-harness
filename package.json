@@ -1,6 +1,6 @@
 {
   "name": "dsh-tide-lens",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "license": "MIT",
@@ -11,7 +11,7 @@
     "./client": "./harness-client.js",
     "./package.json": "./package.json"
   },
-  "files": ["cordis.patch.yml", "harness-host.mjs", "harness-client.js", "server.mjs", "market.mjs", "models.mjs", "reviews.mjs", "advanced.mjs", "replay.mjs", "whale-history.mjs", "ui", "docs/coverage.md", "docs/coverage.en.md", "docs/media/tide-lens-home.jpg"],
+  "files": ["cordis.patch.yml", "harness-host.mjs", "harness-client.js", "server.mjs", "market.mjs", "models.mjs", "reviews.mjs", "advanced.mjs", "replay.mjs", "whale-history.mjs", "tradfi.mjs", "delistings.mjs", "ui", "docs/coverage.md", "docs/coverage.en.md", "docs/media/tide-lens-home.jpg", "docs/media/tide-lens-market-watch.jpg"],
   "engines": { "node": ">=24.9", "dsh": ">=0.2.2-rc.1 <0.2.3-0" },
   "peerDependencies": { "@deepseek-ai/dsh-tools": ">=0.2.2-rc.1 <0.2.3-0" },
   "scripts": { "start": "node --use-env-proxy server.mjs", "test": "node --test tests/*.test.mjs", "demo": "node scripts/demo.mjs" },
