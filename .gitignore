@@ -1,11 +1,6 @@
+node_modules/
+*.tgz
 .DS_Store
-__pycache__/
-*.py[cod]
-.venv/
 .env
 .env.*
-!.env.example
-.idea/
-.vscode/
-dist/
-build/
+coverage/

@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tide Lens · 行情透镜</title>
+<link rel="stylesheet" href="styles.css">
+<body>
+<div id="app">
+<header class="mast"><div><div class="brand">TIDE<span> LENS</span></div><p>永续合约研究台</p></div><span id="live-status" role="status">连接行情…</span></header>
+<nav id="tabs" aria-label="研究功能">
+  <button data-tab="market" aria-current="page">行情工作台</button>
+  <button data-tab="scan">异动与排名</button>
+  <button data-tab="whale">地址观察</button>
+  <button data-tab="calc">合约计算器</button>
+  <button data-tab="review">核对记录</button>
+</nav>
+<main>
+<section id="market">
+  <div class="controls">
+    <form id="market-form"><label>交易所<select id="venue"><option value="okx">OKX</option><option value="binance">Binance</option><option value="bybit">Bybit</option></select></label>
+    <label>合约<span class="input-line"><input id="symbol" value="BTC" maxlength="12" required aria-label="币种简称" list="symbols"><span>/ USDT</span></span></label>
+    <datalist id="symbols"><option>BTC</option><option>ETH</option><option>SOL</option><option>XRP</option><option>DOGE</option><option>BNB</option></datalist>
+    <button class="action">查询行情</button></form>
+    <div id="windows" aria-label="查看区间"><button data-window="1h">1时</button><button data-window="4h">4时</button><button data-window="24h" aria-pressed="true">24时</button><button data-window="7d">7日</button><button data-window="30d">30日</button></div>
+  </div>
+  <div id="market-message" role="status"></div>
+  <div id="metrics" class="metrics"></div>
+  <div class="layout">
+    <div>
+      <div class="panel primary"><div class="panel-head"><div><h1 id="pair">BTC / USDT</h1><p id="chart-time">当前区间</p></div><button id="price-source" class="source-link">K线来源</button></div>
+        <div class="chart-shell"><canvas id="price-chart" tabindex="0" aria-label="价格 K 线，左右方向键移动时间"></canvas></div><input type="range" id="time" aria-label="同步时间轴" min="0" max="0" value="0">
+        <div id="hover-info" class="chart-info"></div>
+      </div>
+      <div class="panel heat"><div class="panel-head"><div><h2>估算清算热力图</h2><p>颜色表示模型相对强度</p></div><button id="model-source" class="source-link">模型口径</button></div><div class="chart-shell"><canvas id="heat-chart" tabindex="0" aria-label="清算模型热力图"></canvas></div><div id="heat-note" class="chart-info"></div></div>
+      <div class="panel"><div class="panel-head"><h2>持仓与资金结构</h2><button id="structure-source" class="source-link">指标来源</button></div><div id="series-controls"></div><div class="chart-shell short"><canvas id="series-chart" aria-label="持仓和资金费率序列"></canvas></div></div>
+      <div class="panel"><div class="panel-head"><div><h2>公开强平成交</h2><p>交易所公开样本</p></div><button id="liq-source" class="source-link">数据来源</button></div><div id="liquidations"></div></div>
+    </div>
+    <aside>
+      <div class="panel"><div class="panel-head"><h2>清算价位图</h2><span class="tag estimated">估算</span></div><div id="levels"></div></div>
+      <div class="panel"><div class="panel-head"><h2>盘口深度</h2><button id="book-source" class="source-link">快照来源</button></div><div id="book"></div></div>
+      <div class="panel"><div class="panel-head"><h2>成交结构</h2><button id="trade-source" class="source-link">样本口径</button></div><div id="trades"></div></div>
+    </aside>
+  </div>
+</section>
+<section id="scan" hidden>
+  <div class="section-title"><h1>异动与排名</h1><button class="action" id="refresh-scan">刷新当前交易所</button></div>
+  <p>按当前交易所公开合约筛选。异动记录在页面打开时更新。</p>
+  <div class="controls scan-controls"><label>指标<select id="sort"><option value="change">24h 涨跌</option><option value="turnover">24h 成交额</option><option value="oiUsd">名义持仓</option><option value="funding">资金费率</option></select></label><label>排序<select id="direction"><option value="desc">由高到低</option><option value="asc">由低到高</option></select></label><label>筛选币种<input id="search-symbol" placeholder="BTC"></label><label class="check"><input id="watch-only" type="checkbox">仅关注</label></div>
+  <div class="panel"><div class="panel-head"><h2>交易所合约排名</h2><button id="scan-source" class="source-link">来源和口径</button></div><div id="scanner" role="status"></div></div>
+  <div class="panel"><div class="panel-head"><h2>本地异动提醒</h2></div><form id="alert-form" class="controls"><label>币种<input id="alert-symbol" value="BTC" maxlength="12" required></label><label>24h 涨跌绝对值超出 %<input id="alert-change" type="number" min="0.1" max="100" step="0.1" value="5" required></label><button class="action">保存规则</button></form><div id="alerts"></div></div>
+</section>
+<section id="whale" hidden>
+  <div class="section-title"><h1>地址观察</h1></div>
+  <p>查看你指定的 Hyperliquid 公开地址的合约持仓。地址不会被保存。</p>
+  <form id="whale-form" class="controls"><label class="wide">公开钱包地址<input id="whale-address" placeholder="0x…" pattern="0x[0-9a-fA-F]{40}" required></label><button class="action">查询公开持仓</button></form>
+  <div class="panel"><div class="panel-head"><h2>账户快照</h2></div><div id="whale-results" role="status">输入公开地址后查看。</div></div>
+</section>
+<section id="calc" hidden>
+  <div class="section-title"><h1>合约计算器</h1></div>
+  <p>按线性永续、逐仓和输入参数计算。结果为估算。</p>
+  <form id="calc-form" class="controls"><label>方向<select name="side"><option value="long">做多</option><option value="short">做空</option></select></label><label>入场价格<input name="entryPrice" type="number" min="0.00001" step="any" value="100" required></label><label>退出价格<input name="exitPrice" type="number" min="0.00001" step="any" value="110"></label><label>保证金<input name="margin" type="number" min="0.01" step="any" value="100" required></label><label>杠杆倍数<input name="leverage" type="number" min="1" step="any" value="10" required></label><label>资金费率 %<input name="fundingRatePct" type="number" step="any" value="0.01"></label><label>结算次数<input name="fundingPeriods" type="number" min="0" step="1" value="3"></label><label>维持保证金率 %<input name="maintenanceRatePct" type="number" min="0" max="99" step="any" value="0.5"></label><label>单边手续费 %<input name="feeRatePct" type="number" min="0" step="any" value="0.04"></label><label>账户金额<input name="accountBalance" type="number" min="0.01" step="any"></label><label>风险比例 %<input name="riskPct" type="number" min="0.01" step="any"></label><label>止损价<input name="stopPrice" type="number" min="0.00001" step="any"></label><label>目标价<input name="targetPrice" type="number" min="0.00001" step="any"></label><button class="action">计算</button></form>
+  <div class="panel"><div class="panel-head"><h2>估算结果</h2></div><div id="calc-results" role="status"></div></div>
+</section>
+<section id="review" hidden>
+  <div class="section-title"><h1>核对记录</h1><button class="action" id="analysis">生成已确认数据摘要</button></div>
+  <p>点击行情指标或价位，核对来源和计算口径。Harness 分析工具只读取你确认过的快照。</p>
+  <div class="panel"><div id="review-list" role="status"></div></div>
+  <div id="analysis-results" aria-live="polite"></div>
+</section>
+</main>
+<dialog id="evidence"><form method="dialog"><button aria-label="关闭来源面板" class="close">关闭</button></form><h2 id="evidence-title">来源与计算</h2><div id="evidence-body"></div><div id="evidence-actions"></div><p id="evidence-status" role="status"></p></dialog>
+</div>
+<script src="app.js" type="module"></script>
+</body>
+</html>

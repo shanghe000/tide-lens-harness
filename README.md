@@ -1,73 +1,40 @@
-# Open Source Starter
+# Tide Lens · 行情透镜
 
-![Project cover — xuan jing](docs/images/cover.svg)
+Tide Lens 是面向 DeepSeek Harness Web 的永续合约研究看板。它将价格、持仓、账户多空比、资金费率及可用的成交样本放到同一时间轴，并保留交易所和计算口径。点击关键数字核对后，可在 Harness 对话中请模型分析已确认数据。
 
-一个轻量的开源项目起点：把文档、反馈、检查和发布流程准备好，再专注于项目本身。
+## 安装
 
-**状态：可复用的仓库模板。** 不绑定框架或语言；尚未包含业务应用与业务测试。
-
-## 快速开始
-
-点击仓库顶部 **Use this template**，或在克隆本模板后运行：
+需要 Node.js 24.9 以上、DeepSeek Harness Web 0.2.2-rc.1 和 pnpm。下载 GitHub Releases 的 `dsh-tide-lens-0.1.0.tgz`，在该目录执行：
 
 ```sh
-python3 scripts/new_project.py my-project --description "一句话介绍项目" --visibility private
+npx @deepseek-ai/dsh@0.2.2-rc.1 plugin --profile web add ./dsh-tide-lens-0.1.0.tgz
+npx @deepseek-ai/dsh@0.2.2-rc.1 web
 ```
 
-需要 Python 3.10+、Git 和已登录的 GitHub CLI。创建脚本只创建私有仓库，初始文档需要完成后再进入发布流程。
-脚本会生成属于新项目的 README，并保留维护说明与路线图入口。随后补齐安装步骤、最小示例、功能范围、截图与限制。
+浏览器里的 Harness 左侧菜单选择 **Tide Lens**。看板连接宿主机的回环地址，浏览器和 Harness 需要在同一台机器。已有其他 profile 时可先运行 `dsh plugin --profile web list` 检查。需要移除时运行 `dsh plugin --profile web remove dsh-tide-lens`。
 
-## 已包含
+## 用法
 
-| 内容 | 用途 |
-| --- | --- |
-| Issue 表单与 PR 模板 | 收集可复现的问题、清晰的变更说明 |
-| CONTRIBUTING / SECURITY | 贡献方式与私密漏洞报告指引 |
-| Repository quality | 校验文档本地链接、SVG、基础凭据模式与不应提交的文件 |
-| Draft release | 手动创建版本标签与可审核的发布草稿 |
-| Dependabot | 每月检查 GitHub Actions 依赖更新 |
-| 初始化脚本 | 创建新项目，按需配置合并方式与默认分支规则 |
+1. 选择 OKX、Binance 或 Bybit 和币种，查询对应 USDT 本位永续。用同一条时间轴查看 K 线、持仓及估算清算图。
+2. 点击指标、时间点、盘口档位或公开成交查看来源。确认或拒绝具体观察值，行情刷新会产生新的快照。
+3. 打开「核对记录」查看证据或撤回确认。在 Harness 对话中可输入「用 Tide Lens 已确认的数据，列出来源和时间，再分析价格变化与持仓变化的关系」。
+4. 异动页支持涨跌、成交额、持仓和费率排名、手动关注和网页打开时的本地阈值提示。地址观察接受用户输入的 Hyperliquid 公开地址。计算器支持逐仓强平、收益、费用、资金费及风险仓位估算。
 
-## 本地检查
+## 范围与口径
+
+- 附带的数据文件为空。运行时从用户所在机器向交易所发起公开请求。交易所的网络可用性和使用条件适用于这些请求，可使用常规 `HTTPS_PROXY`、`HTTP_PROXY` 和 `NO_PROXY` 环境配置。
+- 盘口显示当前公开快照，不能重建旧盘口。成交是公开逐笔接口返回的有限样本，分档是按每笔的名义价值，无法据此识别账户大小。账户多空比按交易所给出的比例字段展示，绝对账户数缺失。公开强平成交的覆盖按交易所和时间而异，缺失数据保留缺失状态。
+- 清算热力图是基于公开持仓变化和杠杆假设的独立模型。颜色是归一化强度。详情中列明模型输入、杠杆和维持保证金率。
+- 地址观察不提供识别巨鲸身份、完整群体账户历史或交易执行。站外可见功能和实现范围见 [覆盖追踪表](docs/coverage.md)。
+- 核对记录保存在 `~/.tide-lens/`。通过 `TIDE_LENS_REVIEW_DIR` 可指定本机保存目录。发布仓库和安装包无交易所密钥、用户记录或第三方数据快照。数据提供者保留其各自权利。
+- 独立的只读研究工具，模型输出和计算器估算都需要自行核对。
+
+## 开发
 
 ```sh
-python3 scripts/check_repository.py
-python3 scripts/check_publication.py
+npm test
+npm start
+npm pack
 ```
 
-这是仓库卫生检查，不能代替业务测试、完整密钥扫描或安全审计。
-脚本扫描 Git 跟踪文件；修改后请先暂存新文件再检查，避免漏掉未跟踪文件。
-链接检查覆盖 Markdown 行内相对链接和 HTML 图片本地路径，不请求外部网络，也不校验锚点。
-
-## 初始化仓库设置
-
-新项目首次推送并看到 `Repository quality` 成功后执行：
-
-```sh
-python3 scripts/configure_repository.py
-```
-
-脚本按当前仓库和已登录账号工作，要求你是仓库所有者；它设置 squash 合并与合并后清理功能分支。
-公开仓库还会开启私密漏洞报告、添加需要 PR 和检查的默认分支规则；管理员仅在 PR 中可绕过。
-私有仓库仅设置合并选项，并提示规则需按计划能力单独配置。
-GitHub 不会从模板复制规则与仓库设置，因此每个新项目需运行一次。
-
-## 发布
-
-先完成全历史凭据扫描、第三方许可核对及项目测试，再通过 `Publication readiness`。初始 README 的写作提示会阻止发布。
-
-Actions → **Draft release** → **Run workflow** → 输入 `v0.1.0`。
-成功后到 Releases 检查草稿，再手动发布。流程对默认分支运行时的确切提交打标签，不覆盖已有版本。
-仅创建源码发布草稿；二进制打包与软件包分发请按项目添加。
-
-## 接入你的技术栈
-
-在 `.github/workflows/` 添加项目自己的检查。例如 Python 的真实测试、Node 的锁文件安装与构建、Go 的测试。
-依赖清单存在后再添加对应的 Dependabot ecosystem，避免空配置报错。
-功能稳定后，把业务检查名称加入默认分支规则。
-
-## 贡献与许可
-
-[贡献指南](CONTRIBUTING.md) · [行为规范](CODE_OF_CONDUCT.md) · [安全政策](SECURITY.md) · [MIT License](LICENSE)
-
-保留模板原有许可声明；为新增代码补充适用的版权与许可。
+`npm start` 打印可在本机浏览器中打开的临时地址。插件没有额外的运行依赖，Harness 在挂载时提供工具开发接口。独立代码采用 [MIT 许可](LICENSE)。
