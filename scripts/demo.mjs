@@ -34,8 +34,46 @@ const market={
   liquidations:[],sources:Object.fromEntries([...Object.keys(metrics),'candles','book','trades','oiHistory'].map(key=>[key,source])),
   errors:{liquidations:'演示快照没有公开强平样本。'},
 };
+const demoSource={label:'合成市场观察演示',method:'这些记录由代码生成，只用于展示筛选与证据界面。',quality:'estimated'};
+const quote=(id,label,category,venue,mark,change,volume,funding,extra={})=>{
+  const openInterest=Math.round(volume/mark/3);
+  const values={markPrice:mark,oraclePrice:mark*.999,changePct24h:change,volumeUsd:volume,openInterest,
+    openInterestUsd:openInterest*mark,fundingRatePct:funding,...extra};
+  return {id,symbol:id.split(':').at(-1),venue,category,label,status:'trading',asOf:end,source:demoSource,...values,
+    fieldSources:Object.fromEntries(Object.keys(values).map(key=>[key,demoSource])),raw:{demo:true,...values}};
+};
+const demoTradfi={demo:true,venue:'multi',loadedAt:end,coverage:{status:'available',venues:[
+  {venue:'binance',status:'available',label:'合成示例'},{venue:'hyperliquid',status:'available',label:'合成示例'}]},
+  rows:[
+    quote('binance:XAUUSDT','Gold','commodity','binance',2867.56,-1.28,67_584_203,.0048),
+    quote('binance:NVDAUSDT','Nvidia','equity','binance',176.28,2.64,41_204_375,.0061),
+    quote('xyz:CL','WTI Crude','commodity','hyperliquid',73.78,-.42,29_114_320,-.0052),
+    quote('xyz:NDX','Nasdaq 100','index','hyperliquid',22_801.67,1.08,11_220_410,.0034),
+    quote('binance:TSLAUSDT','Tesla','equity','binance',314.62,-2.89,8_316_940,.0081),
+    quote('xyz:EUR','EUR / USD','fx','hyperliquid',1.0814,.18,5_670_140,.0011),
+    quote('xyz:SILVER','Silver','commodity','hyperliquid',36.47,-.82,4_671_200,-.0044),
+    quote('binance:METAUSDT','Meta','equity','binance',558.24,1.57,3_339_197,.0025),
+    quote('binance:ORIONUSDT','Orion Labs','pre-ipo','binance',175.81,3.41,12_701_550,.005),
+    quote('io:ATLAS','Atlas Systems','pre-ipo','hyperliquid',156.4,-1.61,2_301_990,.0021,
+      {impliedValuationUsd:156_400_000_000}),
+    quote('binance:AURORAUSDT','Aurora Robotics','pre-ipo','binance',56.11,1.77,2_095_469,.006),
+  ],
+};
+const demoDelistings={demo:true,asOf:end,rows:[
+  {id:'example-a',venue:'binance',symbol:'SOLAR/USDT',title:'合成演示 · SOLAR 现货交易对终止',marketType:'spot',stage:'upcoming',
+    effectiveAt:Date.UTC(2030,9,19,10),publishedAt:end-step,source:demoSource,raw:{example:true}},
+  {id:'example-b',venue:'okx',symbol:'TERRA-USD-SWAP',title:'合成演示 · TERRA 永续合约终止',marketType:'perpetual',stage:'recent',
+    effectiveAt:end-step*200,publishedAt:end-step*400,source:demoSource,raw:{example:true}},
+  {id:'example-c',venue:'bybit',symbol:'RIVERUSDT',title:'合成演示 · RIVER 衍生品公告',marketType:'derivatives',stage:'notice',
+    effectiveAt:null,publishedAt:end-step*15,source:demoSource,raw:{example:true}},
+],sources:{}};
 const dashboard=await startDashboard({marketLoader:async({venue,symbol,window})=>({...market,venue,symbol,window}),
   screenerLoader:async({venue})=>({venue,asOf:end,rows:[],errors:{},sources:{}}),
+  whaleLoader:async()=>({timestamp:end,positions:[],source:demoSource,summary:{accountValue:null,totalNotional:null}}),
+  whaleHistoryLoader:async()=>({start:end-24*3_600_000,end,positions:[],events:[],funding:{events:[],coverage:{status:'missing'}},
+    source:demoSource,coverage:{status:'missing',reason:'合成演示不查询外部地址。'}}),
+  tradfiLoader:async()=>demoTradfi,
+  delistingsLoader:async({venue})=>({...demoDelistings,rows:demoDelistings.rows.filter(row=>venue==='all'||row.venue===venue)}),
   replayMarketLoader:async()=>({book:null,liquidations:[],errors:{book:'演示环境没有外部盘口信号。'}}),
   dataDirectory:process.env.TIDE_LENS_REVIEW_DIR || await mkdtemp(join(tmpdir(),'tide-lens-demo-')),
 });

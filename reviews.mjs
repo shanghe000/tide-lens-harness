@@ -19,7 +19,7 @@ function fingerprint(record) {
 function normalizedSource(source) {
   if (typeof source === 'string') return { url: source };
   const clean = {};
-  for (const key of ['url', 'label', 'method', 'quality', 'documentation']) {
+  for (const key of ['url', 'label', 'method', 'quality', 'documentation', 'docs']) {
     if (typeof source?.[key] === 'string') clean[key] = source[key];
   }
   return Object.keys(clean).length ? clean : null;

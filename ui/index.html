@@ -10,6 +10,9 @@
 <nav id="tabs" aria-label="研究功能">
   <button data-tab="market" aria-current="page">行情工作台</button>
   <button data-tab="scan">异动与排名</button>
+  <button data-tab="tradfi">TradFi</button>
+  <button data-tab="preipo">Pre-IPO</button>
+  <button data-tab="delistings">退市监控</button>
   <button data-tab="whale">巨鲸持仓历史</button>
   <button data-tab="replay">盘口与强平回放</button>
   <button data-tab="calc">合约计算器</button>
@@ -59,6 +62,39 @@
   <div class="controls scan-controls"><label>指标<select id="sort"><option value="change">24h 涨跌</option><option value="turnover">24h 成交额</option><option value="oiUsd">名义持仓</option><option value="funding">资金费率</option></select></label><label>排序<select id="direction"><option value="desc">由高到低</option><option value="asc">由低到高</option></select></label><label>筛选币种<input id="search-symbol" placeholder="BTC"></label><label class="check"><input id="watch-only" type="checkbox">仅关注</label></div>
   <div class="panel"><div class="panel-head"><h2>交易所合约排名</h2><button id="scan-source" class="source-link">来源和口径</button></div><div id="scanner" role="status"></div></div>
   <div class="panel"><div class="panel-head"><h2>本地异动提醒</h2></div><form id="alert-form" class="controls"><label>币种<input id="alert-symbol" value="BTC" maxlength="12" required></label><label>24h 涨跌绝对值超出 %<input id="alert-change" type="number" min="0.1" max="100" step="0.1" value="5" required></label><button class="action">保存规则</button></form><div id="alerts"></div></div>
+</section>
+<section id="tradfi" hidden>
+  <div class="section-title"><h1>TradFi 合约</h1><button id="tradfi-refresh" type="button" class="action">刷新行情</button></div>
+  <p>查看股票、指数、商品与外汇等标的的永续合约报价。选中任意数字查看原始字段与计算口径。</p>
+  <div id="tradfi-toolbar" class="controls market-watch-toolbar"></div>
+  <div class="watch-layout">
+    <div class="panel"><div class="panel-head"><h2>市场排名</h2><button type="button" class="source-link" id="tradfi-sources">来源覆盖</button></div>
+      <div id="tradfi-status" class="chart-info" role="status"></div><div id="tradfi-table"></div>
+    </div>
+    <aside class="panel watch-detail" id="tradfi-detail" aria-label="TradFi 合约详情"><h2>合约详情</h2><p>选择一个合约查看详情。</p></aside>
+  </div>
+</section>
+<section id="preipo" hidden>
+  <div class="section-title"><h1>Pre-IPO 合约</h1><button id="preipo-refresh" type="button" class="action">刷新行情</button></div>
+  <p>追踪交易场所归类为上市前的衍生品合约。报价属于合约市场，计算口径见各数字详情。</p>
+  <div id="preipo-toolbar" class="controls market-watch-toolbar"></div>
+  <div class="watch-layout">
+    <div class="panel"><div class="panel-head"><h2>上市前合约</h2><button type="button" class="source-link" id="preipo-sources">来源覆盖</button></div>
+      <div id="preipo-status" class="chart-info" role="status"></div><div id="preipo-table"></div>
+    </div>
+    <aside class="panel watch-detail" id="preipo-detail" aria-label="Pre-IPO 合约详情"><h2>合约详情</h2><p>选择一个合约查看详情。</p></aside>
+  </div>
+</section>
+<section id="delistings" hidden>
+  <div class="section-title"><h1>退市监控</h1><button id="delistings-refresh" type="button" class="action">刷新公告</button></div>
+  <p>按市场与状态筛选。公告缺少明确生效时间时会单独显示。</p>
+  <div id="delistings-toolbar" class="controls market-watch-toolbar"></div>
+  <div class="watch-layout">
+    <div class="panel"><div class="panel-head"><h2>退市事件</h2><button type="button" class="source-link" id="delistings-sources">来源覆盖</button></div>
+      <div id="delistings-status" class="chart-info" role="status"></div><div id="delistings-table"></div>
+    </div>
+    <aside class="panel watch-detail" id="delistings-detail" aria-label="退市事件详情"><h2>事件详情</h2><p>选择一个事件查看公告。</p></aside>
+  </div>
 </section>
 <section id="whale" hidden>
   <div class="section-title"><h1>巨鲸持仓历史</h1></div>

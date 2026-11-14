@@ -1,5 +1,6 @@
 import { evaluateAlerts } from './advanced.mjs';
 import { createDrawingController } from './drawings.js';
+import { setupMarketWatch } from './market-watch.js';
 
 const $ = id => document.getElementById(id);
 const state = {
@@ -91,7 +92,7 @@ function sourceBody(source, error, raw) {
   if (source?.method) box.append(el('p',source.method));
   const a = link(source?.url,'打开原始接口');
   if (a) box.append(a);
-  const documentation=link(source?.documentation,'查看接口文档');
+  const documentation=link(source?.documentation ?? source?.docs,'查看接口文档');
   if(documentation) box.append(' · ',documentation);
   if (error) box.append(el('p',error,'empty'));
   if (raw !== undefined) {
@@ -112,7 +113,8 @@ function showEvidence(title, source, error, raw, fact, fallbackQuality) {
     const label = fact.venue.toUpperCase() + ' · ' + fact.symbol + ' · ' + when(fact.asOf) + ' UTC+8';
     const type = fact.key.startsWith('series:') ? fact.key.split(':')[1] : fact.key;
     const isMetric = Object.hasOwn(metric,type);
-    $('evidence-body').prepend(el('p',label),el('p',isMetric ? fmt(type,fact.value) : num(fact.value) + ' ' + fact.unit));
+    const reading=fact.unit==='UTC 毫秒'?new Date(fact.value).toISOString():isMetric?fmt(type,fact.value):num(fact.value)+' '+fact.unit;
+    $('evidence-body').prepend(el('p',label),el('p',reading));
     if (fact.context) $('evidence-body').append(sourceBody(null,null,fact.context));
     for (const [decision,text] of [['approve','确认此数据'],['reject','拒绝'],['revoke','撤回确认']]) {
       actions.append(button(text, async () => {
@@ -419,6 +421,7 @@ function activate(tab) {
   if(tab==='replay')void replayList();
   if(tab!=='replay')pauseReplay();
   if(tab==='whale')drawWhale();
+  marketWatch.onActivate(tab);
 }
 $('tabs').addEventListener('click',e=>{ const b=e.target.closest('[data-tab]'); if(b)activate(b.dataset.tab); });
 $('market-form').addEventListener('submit',e=>{e.preventDefault();void loadMarket();});
@@ -765,6 +768,7 @@ $('analysis').onclick=async()=>{
     $('analysis-results').replaceChildren(detail);
   }catch(e){empty($('analysis-results'),e.message,true);}
 };
+const marketWatch=setupMarketWatch({$,api,el,button,table,empty,badge,showEvidence,link,num,changeClass});
 const resize = new ResizeObserver(()=>{drawCharts();drawWhale();});
 resize.observe($('price-chart').parentElement);
 resize.observe($('whale-chart').parentElement);

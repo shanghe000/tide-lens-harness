@@ -11,10 +11,13 @@ import { calculate, loadWhale } from './advanced.mjs';
 import { normalizeDrawings } from './ui/drawings.js';
 import { createReplay } from './replay.mjs';
 import { loadWhaleHistory } from './whale-history.mjs';
+import { loadTradfi } from './tradfi.mjs';
+import { loadDelistings } from './delistings.mjs';
 
 const ui = fileURLToPath(new URL('./ui/', import.meta.url));
 const staticFiles = new Map([
   ['', ['index.html', 'text/html; charset=utf-8']],
+  ['market-watch.js', ['market-watch.js', 'text/javascript; charset=utf-8']],
   ['drawings.js', ['drawings.js', 'text/javascript; charset=utf-8']],
   ['app.js', ['app.js', 'text/javascript; charset=utf-8']],
   ['styles.css', ['styles.css', 'text/css; charset=utf-8']],
@@ -55,6 +58,8 @@ export async function startDashboard({
   whaleLoader = loadWhale,
   whaleHistoryLoader = loadWhaleHistory,
   replayMarketLoader = loadReplayTick,
+  tradfiLoader = loadTradfi,
+  delistingsLoader = loadDelistings,
 } = {}) {
   const reviews = createReviews(dataDirectory);
   const recorder = createReplay({dataDirectory,marketLoader:replayMarketLoader});
@@ -93,6 +98,8 @@ export async function startDashboard({
   }
   const lookupMarket = cacheReads(15_000, 40, marketLoader);
   const lookupScreener = cacheReads(35_000, 5, screenerLoader);
+  const lookupTradfi = cacheReads(60_000, 3, tradfiLoader);
+  const lookupDelistings = cacheReads(75_000, 12, delistingsLoader);
   const facts = new Map();
   const snapshots = new Map();
   const prefix = '/' + randomBytes(24).toString('hex') + '/';
@@ -104,7 +111,60 @@ export async function startDashboard({
     if (facts.size > 4000) facts.delete(facts.keys().next().value);
   }
 
+  const reviewFields = {
+    markPrice:['合约标记价','报价币'], oraclePrice:['参考价','报价币'],
+    changePct24h:['合约 24 小时变动','%'], volumeUsd:['24 小时成交额','USD 等值'],
+    openInterest:['未平仓量','基础单位'], openInterestUsd:['名义持仓','USD 等值'],
+    fundingRatePct:['资金费率','%'], longRatio:['账户多空比','倍'], impliedValuationUsd:['隐含估值','USD 等值'],
+  };
+  const timestamp = value => typeof value === 'number' ? value : Date.parse(value);
+  const validSource = source => source?.quality === 'measured' || source?.quality === 'estimated';
+
   const routes = {
+    'GET api/tradfi': async ({searchParams}) => {
+      const venue=searchParams.get('venue') || 'all';
+      if (!['all','binance','hyperliquid'].includes(venue)) throw new RangeError('不支持该合约来源。');
+      const result=await lookupTradfi(venue,{venue});
+      const asOf=timestamp(result.loadedAt ?? result.asOf);
+      const rows=result.rows.filter(row=>venue==='all'||row.venue?.toLowerCase()===venue).map(row=>{
+        const audit={};
+        if (!result.demo) for (const [key,[label,unit]] of Object.entries(reviewFields)) {
+          const source=row.fieldSources?.[key];
+          if (!validSource(source)) continue;
+          const fieldTime=source.raw?.closeTime ?? source.raw?.time ?? source.raw?.timestamp ?? source.raw?.openInterestTime;
+          const applicableUnit=key==='markPrice'||key==='oraclePrice'?row.quoteCurrency??unit:
+            ['volumeUsd','openInterestUsd'].includes(key)?row.notionalCurrency??unit:unit;
+          const fact=makeFact({key:`tradfi:${row.id}:${key}`,venue:row.venue.toLowerCase(),symbol:row.symbol,
+            asOf:timestamp(row.fieldTimes?.[key] ?? fieldTime ?? row.observedAt ?? row.retrievedAt ?? row.asOf) || asOf,
+            label,unit:applicableUnit,value:row[key],
+            quality:source.quality,source,context:{contract:row.id,category:row.category,field:key,provider:row.dex ?? null,raw:source.raw ?? null,basis:key==='impliedValuationUsd'?row.impliedValuationBasis:null}});
+          if(fact){keepFact(fact);audit[key]=fact;}
+        }
+        return {...row,audit};
+      });
+      return {...result,rows};
+    },
+    'GET api/delistings': async ({searchParams}) => {
+      const venue=searchParams.get('venue') || 'all';
+      const window=searchParams.get('window') || '30d';
+      if(!['all','okx','binance','bybit'].includes(venue)||!['7d','30d','90d'].includes(window)) {
+        throw new RangeError('不支持该交易所或时间范围。');
+      }
+      const result=await lookupDelistings(venue+':'+window,{venue,window});
+      const rows=result.rows.map(row=>{
+        const source=row.source;
+        const effectiveAt=timestamp(row.effectiveAt);
+        const fact=!result.demo&&validSource(source) ? makeFact({
+          key:`delisting:${row.id}`,venue:row.venue,symbol:row.symbol ?? row.symbols?.join(', ') ?? '交易所公告',
+          asOf:timestamp(row.publishedAt ?? row.observedAt ?? result.asOf),label:'公告生效时间',unit:'UTC 毫秒',
+          value:effectiveAt,quality:source.quality,source,context:{stage:row.stage,marketType:row.marketType ?? row.market ?? null,
+            effectiveAt:Number.isFinite(effectiveAt)?new Date(effectiveAt).toISOString():null,noticeTitle:row.title},
+        }) : null;
+        keepFact(fact);
+        return {...row,fact};
+      });
+      return {...result,rows};
+    },
     'GET api/market': async ({ searchParams }) => {
       const venue = searchParams.get('venue') || 'okx';
       const symbol = searchParams.get('symbol') || 'BTC';
